@@ -168,18 +168,13 @@ REID_GALLERY_FILE  = os.path.join(BASE_DIR, "enrollment", "reid_gallery.pkl")
 EMPLOYEE_DB_PATH   = os.path.join(BASE_DIR, "data", "employees.db")
 
 # ---------------------------------------------------------------
-# DATABASE URL CONFIGURATION (For SQLAlchemy Shared Databases)
+# DATABASE CONFIGURATION (MongoDB)
 # ---------------------------------------------------------------
-DATABASE_URL       = os.environ.get("DATABASE_URL")
+MONGO_URI = os.environ.get("MONGO_URI")
 
-if not DATABASE_URL:
-    # Fallback to local SQLite using the paths above
-    ATTENDANCE_DB_URL = f"sqlite:///{DATABASE_PATH.replace(os.sep, '/')}"
-    EMPLOYEE_DB_URL   = f"sqlite:///{EMPLOYEE_DB_PATH.replace(os.sep, '/')}"
-else:
-    # Use the shared remote database
-    ATTENDANCE_DB_URL = DATABASE_URL
-    EMPLOYEE_DB_URL   = DATABASE_URL
+if not MONGO_URI:
+    # Fallback to local MongoDB
+    MONGO_URI = "mongodb://localhost:27017/attendance_db"
 
 # ---------------------------------------------------------------
 # EMPLOYEE GALLERY  (pre-extracted face crops + augmented images)
