@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+
+# Data and Logs
+data/
+logs/
+exports/
+enrollment/
+employee gallery/
+
+# AI Models
+*.pt
+*.onnx

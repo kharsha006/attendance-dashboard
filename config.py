@@ -1,3 +1,9 @@
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 # =============================================================
 #  config.py  —  All settings for the attendance system
 #  Phase 3: Multi-Camera Tracking + ReID + Activity Recognition
