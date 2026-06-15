@@ -1,111 +1,55 @@
-# Office Attendance & Tracking System — Phase 3
+# Office Attendance & Tracking System (Phase 3)
 
-Multi-camera employee tracking and attendance for 20–25 employees across 4 cameras.
+A high-performance, multi-camera employee attendance and activity tracking system built with Python, InsightFace, YOLOv8, and MongoDB.
 
----
+This project is architected to run in a **split deployment** mode:
+1. **Local Camera Monitor**: A heavy AI processing engine that runs on a local PC connected to the office network cameras (operating automatically from 9 AM to 9 PM to save resources).
+2. **Cloud Dashboard**: A lightweight, 24/7 Flask web application hosted on the cloud (e.g., Render) for HR and administrators to view live statistics and generate reports from anywhere.
 
-## Architecture
+## 🌟 Key Features
 
-```
-Camera 1 (Entry)  ──┐
-                     ├── camera_processor.py (InsightFace)
-Camera 2 (Exit)   ──┘     → attendance_db.py
+* **Advanced Face Recognition**: Upgraded to **InsightFace (ArcFace 512-d)** for state-of-the-art accuracy, replacing the older MTCNN+Facenet pipeline.
+* **Multi-Camera Processing**: Connect multiple RTSP/IP cameras to track entries, exits, and continuous office presence.
+* **Person Re-Identification (ReID)**: Uses YOLOv8 + ByteTrack + OSNet to maintain consistent identities across different cameras without needing to see the face constantly.
+* **MongoDB Integration**: Completely migrated from SQLite to MongoDB to support distributed cloud deployment and high-speed logging.
+* **Anti-Spoofing & Liveness Detection**: Prevents attendance fraud (e.g., holding up a photo) via a secondary AI liveness check.
+* **Automated Email Alerts**: Sends SMTP email alerts to the admin when an unknown person is detected or if a camera goes offline.
+* **Beautiful HR Dashboard**: A responsive, modern Flask web interface built without complex frontend frameworks (Vanilla HTML/CSS/JS). Features live tracking, daily summaries, and Excel report exports.
 
-Camera 3 (Office A) ──┐
-                       ├── office_tracker.py
-Camera 4 (Office B) ──┘     → face_engine.py (InsightFace)
-                               → reid_engine.py (OSNet ReID)
-                               → tracker.py (ByteTrack + GlobalRegistry)
-                               → activity_recognizer.py
-                               → tracking_db.py
-```
+## 🏗️ Architecture
 
-## New Files (Phase 3)
-
-| File | Role |
-|------|------|
-| `face_engine.py` | InsightFace ArcFace wrapper — replaces MTCNN + DeepFace |
-| `reid_engine.py` | OSNet cross-camera re-identification |
-| `tracker.py` | ByteTrack per-camera + GlobalIdentityRegistry |
-| `activity_recognizer.py` | Activity state classification per track |
-| `office_tracker.py` | Multi-camera tracking engine (Camera 3 + 4) |
-| `tracking_db.py` | New DB tables: presence, tracking_events, activity_log |
-
-## Setup (first time)
-
-```bash
-python setup.py
+```mermaid
+graph LR
+    A[RTSP Cameras] -->|Live Feed| B(Local AI Monitor)
+    B -->|InsightFace + YOLO| B
+    B -->|Logs Events| C[(MongoDB Atlas)]
+    C -->|Reads Data| D(Cloud Dashboard)
+    D -->|Displays| E[HR / Admin]
 ```
 
-## Enroll employees
+## 🚀 Deployment Instructions
 
-```
-enrollment/
-  Harsha/
-    photo1.jpg  photo2.jpg  photo3.jpg  photo4.jpg
-  Ravi Kumar/
-    photo1.jpg  photo2.jpg  …
-```
+### 1. Cloud Database (MongoDB Atlas)
+Create a cluster on MongoDB Atlas and get your Connection String (URI).
 
-```bash
-python enroll_employees.py
-```
+### 2. Cloud Dashboard (Render)
+Deploy this repository as a Web Service on Render or any cloud provider:
+* **Build Command:** `pip install -r requirements.txt`
+* **Start Command:** `gunicorn dashboard.app:app`
+* **Environment Variable:** Add `MONGO_URI` and paste your MongoDB Connection String.
 
-## Configure cameras
+*(Note: The "Live Cameras" video feed tab is automatically hidden in cloud deployments because the cloud server cannot access your local office network).*
 
-Edit `config.py`:
+### 3. Local Camera Monitor
+On the local PC connected to the cameras:
+1. Install dependencies: `pip install -r requirements.txt`
+2. Enroll employees by adding images to the `employee gallery/` folder and running `python enroll_employees.py`.
+3. Launch the AI monitor connected to your cloud database by double-clicking:
+   **`start_cloud.bat`** (It will prompt you for your `MONGO_URI`).
 
-```python
-ENTRY_CAMERA_URL    = "rtsp://admin:pass@192.168.1.10/stream1"
-EXIT_CAMERA_URL     = "rtsp://admin:pass@192.168.1.11/stream1"
-OFFICE_CAMERA_A_URL = "rtsp://admin:pass@192.168.1.12/stream1"
-OFFICE_CAMERA_B_URL = "rtsp://admin:pass@192.168.1.13/stream1"
-```
+## 🛠️ Configuration
+All thresholds, cooldowns, email credentials, and camera streams are easily configurable inside `config.py`.
 
-## Run
-
-```bash
-python run.py
-# Dashboard: http://localhost:5000
-```
-
-## Dashboard tabs
-
-- **Live Tracking** — real-time presence: name, camera, activity, duration, verified status
-- **Attendance** — entry/exit times, hours worked, session breakdown
-- **Activity** — working/idle/active time per employee
-- **Monthly** — attendance percentage reports
-- **Security** — unknown person detections with face crops
-
-## Identity resolution flow (Camera 3 & 4)
-
-```
-Frame → YOLO detect person → ByteTrack (local track_id)
-         ↓ every 5 frames
-    InsightFace on person crop
-         ↓ match found?
-    YES → assign emp_id (face_verified=True)
-    NO  → OSNet ReID → search gallery
-              ↓ sim > 0.65?
-          YES → reuse existing global_id
-          NO  → assign new Person_XXXX
-```
-
-## Activity states
-
-| State | Trigger |
-|-------|---------|
-| `working_with_laptop` | Laptop/keyboard detected overlapping person box |
-| `on_call` | Phone near upper body |
-| `in_meeting` | Person in meeting zone |
-| `idle` | No movement for 30+ frames |
-| `active` | Moving, no specific work cues |
-
-## Key config parameters
-
-```python
-FACE_DETECTION_INTERVAL  = 5      # run face recog every N frames
-REID_SIMILARITY_THRESH   = 0.65   # ReID match threshold
-IDLE_FRAME_COUNT         = 30     # frames before idle state
-TRACKING_FRAME_INTERVAL_SECONDS = 1  # office camera speed
-```
+* **`OFFICE_START_HOUR` / `OFFICE_END_HOUR`**: Restricts the AI processing window to office hours (default 9:00 to 21:00) to save GPU power.
+* **`ATTENDANCE_CAMERA_URLS`**: List of RTSP streams for Entry/Exit cameras.
+* **`COOLDOWN_MINUTES`**: Prevents spamming the database with rapid consecutive detections.
