@@ -155,11 +155,14 @@ def export_to_excel(start_date: str, end_date: str, filepath: str):
             "Status": d.get("status")
         })
 
-    df = pd.DataFrame(formatted_docs)
+    if not formatted_docs:
+        df = pd.DataFrame(columns=["Employee", "Date", "First Seen", "Last Seen", "Status"])
+    else:
+        df = pd.DataFrame(formatted_docs)
 
-    for col in ["First Seen", "Last Seen"]:
-        if col in df.columns:
-            df[col] = df[col].apply(lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S").strftime("%I:%M %p") if pd.notna(x) and x != "" and x is not None else "—")
+        for col in ["First Seen", "Last Seen"]:
+            if col in df.columns:
+                df[col] = df[col].apply(lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S").strftime("%I:%M %p") if pd.notna(x) and x != "" and x is not None else "—")
 
     df.to_excel(filepath, index=False)
     print(f"[DB] Exported to {filepath}")
@@ -213,8 +216,14 @@ def get_monthly_report(month_str: str):
 
 def export_monthly_to_excel(month_str: str, filepath: str):
     report_data = get_monthly_report(month_str)
-    df = pd.DataFrame(report_data)
-    df.columns = ["Employee ID", "Employee Name", "Present Days", "Monthly Working Days", "Attendance %"]
+    
+    if not report_data:
+        # If database is completely empty, create an empty sheet with columns
+        df = pd.DataFrame(columns=["Employee ID", "Employee Name", "Present Days", "Monthly Working Days", "Attendance %"])
+    else:
+        df = pd.DataFrame(report_data)
+        df.columns = ["Employee ID", "Employee Name", "Present Days", "Monthly Working Days", "Attendance %"]
+        
     df.to_excel(filepath, index=False)
     return filepath
 
