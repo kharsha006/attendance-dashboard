@@ -642,6 +642,7 @@ DASHBOARD_HTML = r"""
   <div class="tab {% if hide_cameras %}active{% endif %}" id="nav-tab-attendance" onclick="showTab('tab-attendance')">Daily Dashboard</div>
   <div class="tab" id="nav-tab-monthly" onclick="showTab('tab-monthly')">Monthly Reports</div>
   <div class="tab" id="nav-tab-frames" onclick="showTab('tab-frames')">Captured Frames</div>
+  <div class="tab" id="nav-tab-enroll" onclick="showTab('tab-enroll')">Enroll Employee</div>
 </div>
 
 <div class="main">
@@ -818,6 +819,24 @@ DASHBOARD_HTML = r"""
     </div>
     <div class="unknown-grid" id="frames-container" style="padding: 16px;">
       <p style="color:var(--text-muted);font-style:italic;">Loading frames...</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════ ENROLL EMPLOYEE ══════════════════ -->
+  <div id="tab-enroll" class="page">
+    <div class="section-head" style="padding:16px 18px 0;">
+      <div class="section-title">Enroll New Employee</div>
+    </div>
+    <div style="padding: 16px; max-width: 500px;">
+      <p style="color:var(--text-muted); font-size:14px; margin-bottom:16px;">
+        Upload 1 to 3 clear photos of the new employee's face. The cloud dashboard will securely queue these images for your local Office PC to process and train the AI model.
+      </p>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <input type="text" id="enroll-name" placeholder="Employee Full Name" style="padding:10px; border:1px solid var(--border); border-radius:4px; font-family:var(--sans); font-size:14px;">
+        <input type="file" id="enroll-files" multiple accept="image/*" style="padding:10px; border:1px solid var(--border); border-radius:4px; font-family:var(--sans);">
+        <button class="btn-primary" onclick="submitEnrollment()" style="padding:12px 16px; border-radius:4px; font-size:14px; font-weight:600;">Submit Enrollment</button>
+      </div>
+      <p id="enroll-status" style="margin-top:16px; font-weight:600; font-size:14px;"></p>
     </div>
   </div>
 
@@ -1296,6 +1315,53 @@ DASHBOARD_HTML = r"""
       });
   }
 
+  // ── Enroll Employee ──
+  function submitEnrollment() {
+    const name = document.getElementById('enroll-name').value.trim();
+    const files = document.getElementById('enroll-files').files;
+    const status = document.getElementById('enroll-status');
+    
+    if (!name) { status.textContent = "Please enter a name."; status.style.color = "red"; return; }
+    if (files.length === 0) { status.textContent = "Please upload at least 1 photo."; status.style.color = "red"; return; }
+    if (files.length > 3) { status.textContent = "Maximum 3 photos allowed."; status.style.color = "red"; return; }
+    
+    status.textContent = "Processing images...";
+    status.style.color = "var(--text-muted)";
+    
+    const promises = Array.from(files).map(file => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = e => reject(e);
+        reader.readAsDataURL(file);
+      });
+    });
+    
+    Promise.all(promises).then(base64Images => {
+      status.textContent = "Sending to cloud queue...";
+      fetch('/api/enroll_employee', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_name: name, images: base64Images })
+      })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success) {
+          status.textContent = "Success! The photos are queued. The Office PC will process them shortly.";
+          status.style.color = "var(--success)";
+          document.getElementById('enroll-name').value = '';
+          document.getElementById('enroll-files').value = '';
+        } else {
+          status.textContent = "Error: " + res.error;
+          status.style.color = "red";
+        }
+      }).catch(err => {
+        status.textContent = "Network error occurred.";
+        status.style.color = "red";
+      });
+    });
+  }
+
   // ── Bootstrap ──
   const today = new Date().toISOString().slice(0,7);
   document.getElementById('att-date').value       = todayStr;
@@ -1469,6 +1535,31 @@ def api_captured_frames():
         if "timestamp" in d and hasattr(d["timestamp"], "isoformat"):
             d["timestamp"] = d["timestamp"].isoformat()
     return jsonify(docs)
+
+
+@app.route("/api/enroll_employee", methods=["POST"])
+def api_enroll_employee():
+    data = request.json
+    employee_name = data.get("employee_name")
+    images = data.get("images", [])
+    if not employee_name or not images:
+        return jsonify({"success": False, "error": "Missing name or images"}), 400
+        
+    employee_id = employee_name.lower().replace(" ", "_")
+    from attendance_db import get_db
+    from datetime import datetime, timezone
+    db = get_db()
+    
+    # Insert into the pending queue for the local Office PC to process
+    db.pending_enrollments.insert_one({
+        "employee_id": employee_id,
+        "employee_name": employee_name,
+        "images": images,
+        "status": "pending",
+        "timestamp": datetime.now(timezone.utc)
+    })
+    
+    return jsonify({"success": True})
 
 
 @app.route("/logs/unknown/<path:filename>")

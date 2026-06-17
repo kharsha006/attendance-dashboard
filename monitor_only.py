@@ -10,6 +10,61 @@ from attendance_db import initialise_database
 from camera_processor import AttendanceProcessor
 from config import EMBEDDINGS_FILE
 from employee_db import EmployeeDB
+import threading
+import base64
+import numpy as np
+import cv2
+
+def enrollment_worker_loop(attendance_processor):
+    from attendance_db import get_db
+    db = get_db()
+    emp_db = EmployeeDB()
+    face_engine = attendance_processor._face_engine
+    
+    while True:
+        try:
+            pending = db.pending_enrollments.find_one({"status": "pending"})
+            if pending:
+                employee_id = pending["employee_id"]
+                employee_name = pending["employee_name"]
+                b64_images = pending.get("images", [])
+                
+                embeddings = []
+                for b64 in b64_images:
+                    try:
+                        # Decode base64 to image
+                        if b64.startswith("data:image"):
+                            b64 = b64.split(",")[1]
+                        img_data = base64.b64decode(b64)
+                        nparr = np.frombuffer(img_data, np.uint8)
+                        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                        if img is not None:
+                            faces = face_engine.detect_and_embed(img)
+                            if faces:
+                                # take the largest face
+                                best_face = max(faces, key=lambda f: (f["box"][2]-f["box"][0])*(f["box"][3]-f["box"][1]))
+                                embeddings.append(best_face["embedding"])
+                    except Exception as e:
+                        print(f"[ENROLLMENT] Error processing image for {employee_name}: {e}")
+                
+                if embeddings:
+                    # Average the embeddings
+                    avg_emb = np.mean(embeddings, axis=0)
+                    # Insert into EmployeeDB
+                    emp_db.upsert(employee_id, employee_name, avg_emb.reshape(1, -1), len(embeddings))
+                    print(f"\n[ENROLLMENT] Successfully enrolled {employee_name} from cloud queue.\n")
+                    # Update the live processor's in-memory db
+                    attendance_processor._employee_db = emp_db.get_all()
+                else:
+                    print(f"\n[ENROLLMENT] Failed to find faces in uploaded photos for {employee_name}.\n")
+                    
+                # Delete the pending task so it takes up 0 space
+                db.pending_enrollments.delete_one({"_id": pending["_id"]})
+                
+        except Exception as e:
+            pass
+            
+        time.sleep(10)
 
 def check_prerequisites():
     print("\n" + "=" * 60)
@@ -57,9 +112,18 @@ def main():
     print("  MONITOR IS RUNNING")
     print("=" * 60)
     print("  Attendance is currently tracking via your camera(s).")
+    print("  Background Enrollment Worker is polling the cloud...")
     print("  Press Ctrl+C to stop")
     print("=" * 60 + "\n")
     print("=" * 60 + "\n")
+
+    # Start the distributed enrollment worker thread
+    enroll_thread = threading.Thread(
+        target=enrollment_worker_loop,
+        args=(attendance_processor,),
+        daemon=True
+    )
+    enroll_thread.start()
 
     def handle_shutdown(sig, frame):
         print("\n\n[SYSTEM] Shutdown signal received. Stopping...")
