@@ -57,30 +57,45 @@ class AntiSpoofing:
         
         # Expand scale
         scale = 2.7
-        new_w = w * scale
-        new_h = h * scale
+        new_w = int(w * scale)
+        new_h = int(h * scale)
         
         # New bbox
         nx1 = int(cx - new_w / 2.0)
         ny1 = int(cy - new_h / 2.0)
-        nx2 = int(cx + new_w / 2.0)
-        ny2 = int(cy + new_h / 2.0)
+        nx2 = nx1 + new_w
+        ny2 = ny1 + new_h
         
-        # Constrain to frame
         frame_h, frame_w = frame.shape[:2]
-        nx1 = max(0, nx1)
-        ny1 = max(0, ny1)
-        nx2 = min(frame_w, nx2)
-        ny2 = min(frame_h, ny2)
         
-        # Crop
-        face_crop = frame[ny1:ny2, nx1:nx2]
+        # Calculate padding needed if box goes out of bounds
+        pad_top = max(0, -ny1)
+        pad_bottom = max(0, ny2 - frame_h)
+        pad_left = max(0, -nx1)
+        pad_right = max(0, nx2 - frame_w)
+        
+        # Valid slice within the frame
+        cx1 = max(0, nx1)
+        cy1 = max(0, ny1)
+        cx2 = min(frame_w, nx2)
+        cy2 = min(frame_h, ny2)
+        
+        face_crop = frame[cy1:cy2, cx1:cx2]
+        
         if face_crop.size == 0:
             return True, 1.0
             
-        # Preprocess for MiniFASNet (80x80, BGR, [0, 1] range, NCHW format)
+        # Pad the crop with black pixels to maintain a perfect square aspect ratio
+        if pad_top > 0 or pad_bottom > 0 or pad_left > 0 or pad_right > 0:
+            face_crop = cv2.copyMakeBorder(
+                face_crop, pad_top, pad_bottom, pad_left, pad_right, 
+                cv2.BORDER_CONSTANT, value=[0, 0, 0]
+            )
+            
+        # Preprocess for MiniFASNet (80x80, RGB, [0, 1] range, NCHW format)
         try:
-            resized_crop = cv2.resize(face_crop, (80, 80))
+            rgb_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+            resized_crop = cv2.resize(rgb_crop, (80, 80))
             input_tensor = resized_crop.astype(np.float32) / 255.0
             input_tensor = np.transpose(input_tensor, (2, 0, 1)) # HWC to CHW
             input_tensor = np.expand_dims(input_tensor, axis=0)  # Add batch dim NCHW
