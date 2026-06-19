@@ -58,8 +58,9 @@ class AntiSpoofing:
         # Cache YOLO results per frame to avoid running it multiple times if there are multiple faces
         frame_id = id(frame)
         if self.last_frame_id != frame_id:
+            # Hyper-sensitive screen detection (conf=0.10)
             self.last_results = self.yolo(
-                frame, imgsz=320, verbose=False, device=self._yolo_device,
+                frame, imgsz=320, verbose=False, device=self._yolo_device, conf=0.10
             )
             self.last_frame_id = frame_id
             
@@ -78,6 +79,10 @@ class AntiSpoofing:
                 
                 # Check for screens (existing logic) or books (class 73)
                 if cls_id in self.spoof_classes or cls_id == 73:
+                    # Ignore massive background TVs/hallucinations. But never ignore cell phones (67) or laptops (63).
+                    if cls_id == 62 and box_area / face_area > 8.0:
+                        continue
+                        
                     # Calculate how much of the face is inside the screen/book
                     ix1 = max(fx1, bx1)
                     iy1 = max(fy1, by1)
