@@ -102,10 +102,11 @@ class AntiSpoofing:
             if not is_real:
                 break
                 
-        # RULE 1 & 2: Evaluate Person bounding boxes
+        # RULE 1, 2 & 4: Evaluate Person bounding boxes
         if is_real:
             best_person_overlap = 0.0
             best_person_area = 0.0
+            best_person_box = None
             
             for bx1, by1, bx2, by2, box_area in person_boxes:
                 ix1 = max(fx1, bx1)
@@ -119,18 +120,30 @@ class AntiSpoofing:
                     if overlap_ratio > best_person_overlap:
                         best_person_overlap = overlap_ratio
                         best_person_area = box_area
+                        best_person_box = (bx1, by1, bx2, by2)
                         
             # If the face is not inside any person box (Missing Body Rule)
             if best_person_overlap < 0.3:
                 log.warning(f"[SPOOF] No YOLO person body found attached to this face (Missing Body Rule).")
                 is_real = False
                 score = 0.05
-            # If the face is inside a person box, check the ratio (Disembodied Face Rule)
-            elif best_person_area > 0:
+            # If the face is inside a person box, check ratios
+            elif best_person_area > 0 and best_person_box is not None:
+                # RULE 2: Disembodied Face Rule
                 face_to_body_ratio = face_area / best_person_area
                 if face_to_body_ratio > 0.85:
                     log.warning(f"[SPOOF] Face takes up {face_to_body_ratio*100:.1f}% of detected body. Rejecting as printed photo.")
                     is_real = False
                     score = 0.05
-                
+                else:
+                    # RULE 4: Face Position Rule (Chest-level spoofing)
+                    face_cy = (fy1 + fy2) / 2.0
+                    person_h = best_person_box[3] - best_person_box[1]
+                    if person_h > 0:
+                        relative_y = (face_cy - best_person_box[1]) / person_h
+                        if relative_y > 0.45:
+                            log.warning(f"[SPOOF] Face is located too low on the body (Y-ratio: {relative_y:.2f}). Rejecting as chest-level spoof!")
+                            is_real = False
+                            score = 0.05
+                            
         return is_real, score
