@@ -1,18 +1,34 @@
 @echo off
+title Camera Monitor (Cloud Auto Setup)
+
 echo ===================================================
-echo     STARTING LOCAL CAMERA MONITOR (CLOUD MODE)
+echo        CAMERA MONITOR AUTO STARTER
 echo ===================================================
 echo.
-echo Launching Camera Monitor connected to Cloud Database...
 
-:: Change to the directory where the script is located
 cd /d "%~dp0"
 
-:: Start the Python script automatically without prompting for input
-start "Camera Monitor (Cloud)" cmd /k "python monitor_only.py"
+set PYTHON=venv\Scripts\python.exe
+
+echo Checking virtual environment...
+
+if not exist "%PYTHON%" (
+    echo Creating virtual environment...
+    python -m venv venv
+)
+
+echo Upgrading pip...
+%PYTHON% -m pip install --upgrade pip
+
+echo Installing dependencies from requirements.txt...
+%PYTHON% -m pip install -r requirements.txt
 
 echo.
 echo ===================================================
-echo   CAMERA MONITOR LAUNCHED SUCCESSFULLY!
-echo   Face detections are now being processed.
+echo Starting Camera Monitor...
 echo ===================================================
+echo.
+
+start "Camera Monitor" cmd /k "%PYTHON% monitor_only.py"
+
+exit

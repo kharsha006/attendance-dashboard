@@ -836,6 +836,18 @@ DASHBOARD_HTML = r"""
       </div>
       <p id="enroll-status" style="margin-top:16px; font-weight:600; font-size:14px;"></p>
     </div>
+    
+    <!-- ═════════ REGISTERED EMPLOYEES LIST ═════════ -->
+    <div class="section-head" style="padding:16px 18px 0; margin-top: 16px; border-top: 1px solid var(--border);">
+      <div class="section-title">Registered Employees</div>
+      <button onclick="loadEmployees()">Refresh List</button>
+    </div>
+    <div style="padding: 16px;">
+      <div id="employee-list-container">
+        <p style="color:var(--text-muted);font-style:italic;">Loading employees...</p>
+      </div>
+    </div>
+
   </div>
 
 </div><!-- /main -->
@@ -1010,6 +1022,7 @@ DASHBOARD_HTML = r"""
     if (id === 'tab-activity')   loadActivity();
     if (id === 'tab-security')   loadUnknowns();
     if (id === 'tab-frames')     loadFrames();
+    if (id === 'tab-enroll')     loadEmployees();
   }
 
   // ── Camera status badges ──
@@ -1419,6 +1432,54 @@ DASHBOARD_HTML = r"""
     });
   }
 
+  // ── Manage Employees ──
+  function loadEmployees() {
+    const container = document.getElementById('employee-list-container');
+    container.innerHTML = `<p style="color:var(--text-muted);font-style:italic;">Loading employees...</p>`;
+    fetch('/api/list_employees')
+      .then(r => r.json())
+      .then(data => {
+        if (!data || data.length === 0) {
+          container.innerHTML = `<p style="color:var(--text-muted);font-style:italic;">No employees registered.</p>`;
+          return;
+        }
+        let html = `<table style="width:100%; border-collapse: collapse; margin-top: 8px;">`;
+        html += `<tr style="border-bottom: 2px solid var(--border); text-align: left;"><th style="padding: 8px;">Name</th><th style="padding: 8px;">Employee ID</th><th style="padding: 8px;">Images</th><th style="padding: 8px;">Action</th></tr>`;
+        data.forEach(emp => {
+          html += `<tr style="border-bottom: 1px solid var(--border);">`;
+          html += `<td style="padding: 8px; font-weight: 600;">${emp.employee_name}</td>`;
+          html += `<td style="padding: 8px; color: var(--text-muted); font-family: monospace; font-size: 12px;">${emp.employee_id}</td>`;
+          html += `<td style="padding: 8px; color: var(--text-muted);">${emp.image_count}</td>`;
+          html += `<td style="padding: 8px;"><button style="background: var(--danger); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;" onclick="removeEmployee('${emp.employee_id}', '${emp.employee_name.replace(/'/g, "\\'")}')">Remove</button></td>`;
+          html += `</tr>`;
+        });
+        html += `</table>`;
+        container.innerHTML = html;
+      })
+      .catch(err => {
+        container.innerHTML = `<p style="color:red;">Error loading employee list.</p>`;
+      });
+  }
+
+  function removeEmployee(empId, empName) {
+    if (!confirm(`Are you sure you want to completely remove ${empName}? This will delete their face data and cannot be undone.`)) {
+      return;
+    }
+    fetch(`/api/remove_employee/${empId}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(res => {
+        if (res.success) {
+          alert(`${empName} has been successfully removed.`);
+          loadEmployees();
+        } else {
+          alert(`Error removing employee: ${res.error || 'Unknown error'}`);
+        }
+      })
+      .catch(err => {
+        alert("Network error while trying to remove employee.");
+      });
+  }
+
   // ── Bootstrap ──
   const today = new Date().toISOString().slice(0,7);
   document.getElementById('att-date').value       = todayStr;
@@ -1593,6 +1654,29 @@ def api_captured_frames():
             d["timestamp"] = d["timestamp"].isoformat()
     return jsonify(docs)
 
+
+@app.route("/api/list_employees")
+def api_list_employees():
+    try:
+        from employee_db import EmployeeDB
+        db = EmployeeDB()
+        emps = db.list_employees()
+        return jsonify(emps)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/remove_employee/<emp_id>", methods=["DELETE"])
+def api_remove_employee(emp_id):
+    try:
+        from employee_db import EmployeeDB
+        db = EmployeeDB()
+        success = db.delete(emp_id)
+        if success:
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": "Employee not found."})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/api/enroll_employee", methods=["POST"])
 def api_enroll_employee():

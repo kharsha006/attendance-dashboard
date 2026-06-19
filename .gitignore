@@ -16,3 +16,4 @@ employee gallery/
 # AI Models
 *.pt
 *.onnx
+venv/
