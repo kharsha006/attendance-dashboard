@@ -96,7 +96,7 @@ class AntiSpoofing:
         try:
             rgb_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
             resized_crop = cv2.resize(rgb_crop, (80, 80))
-            input_tensor = resized_crop.astype(np.float32) / 255.0
+            input_tensor = resized_crop.astype(np.float32)
             input_tensor = np.transpose(input_tensor, (2, 0, 1)) # HWC to CHW
             input_tensor = np.expand_dims(input_tensor, axis=0)  # Add batch dim NCHW
             
