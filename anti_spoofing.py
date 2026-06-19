@@ -48,6 +48,13 @@ class AntiSpoofing:
         if face_area <= 0:
             return True, 1.0
 
+        # RULE 3: Too Close (Giant Face)
+        frame_h, frame_w = frame.shape[:2]
+        frame_area = frame_h * frame_w
+        if face_area / frame_area > 0.4:
+            log.warning(f"[SPOOF] Face is suspiciously large ({(face_area/frame_area)*100:.1f}% of frame). Rejecting as close-up spoof.")
+            return False, 0.05
+
         # Cache YOLO results per frame to avoid running it multiple times if there are multiple faces
         frame_id = id(frame)
         if self.last_frame_id != frame_id:
@@ -60,15 +67,18 @@ class AntiSpoofing:
         
         is_real = True
         score = 1.0
+        
+        person_boxes = []
 
         for r in results:
             for box in r.boxes:
                 cls_id = int(box.cls[0])
-                if cls_id in self.spoof_classes:
-                    # Found a phone, laptop, or TV
-                    bx1, by1, bx2, by2 = box.xyxy[0].cpu().numpy()
-                    
-                    # Calculate how much of the face is inside the screen
+                bx1, by1, bx2, by2 = box.xyxy[0].cpu().numpy()
+                box_area = max(0, bx2 - bx1) * max(0, by2 - by1)
+                
+                # Check for screens (existing logic) or books (class 73)
+                if cls_id in self.spoof_classes or cls_id == 73:
+                    # Calculate how much of the face is inside the screen/book
                     ix1 = max(fx1, bx1)
                     iy1 = max(fy1, by1)
                     ix2 = min(fx2, bx2)
@@ -78,14 +88,49 @@ class AntiSpoofing:
                         intersection = (ix2 - ix1) * (iy2 - iy1)
                         overlap_ratio = intersection / face_area
                         
-                        # If more than 30% of the face bounding box overlaps with a screen bounding box,
-                        # it's highly likely they are holding a phone/laptop up to the camera!
                         if overlap_ratio > 0.3:
                             is_real = False
                             score = 0.01
-                            log.warning(f"[SPOOF] Face is inside object class {cls_id} (Overlap: {overlap_ratio:.2f})")
+                            obj_name = "Book/Paper" if cls_id == 73 else f"Screen (class {cls_id})"
+                            log.warning(f"[SPOOF] Face is inside {obj_name} (Overlap: {overlap_ratio:.2f})")
                             break
+                            
+                # Collect person boxes to evaluate later
+                if cls_id == 0:
+                    person_boxes.append((bx1, by1, bx2, by2, box_area))
+                    
             if not is_real:
                 break
+                
+        # RULE 1 & 2: Evaluate Person bounding boxes
+        if is_real:
+            best_person_overlap = 0.0
+            best_person_area = 0.0
+            
+            for bx1, by1, bx2, by2, box_area in person_boxes:
+                ix1 = max(fx1, bx1)
+                iy1 = max(fy1, by1)
+                ix2 = min(fx2, bx2)
+                iy2 = min(fy2, by2)
+                
+                if ix1 < ix2 and iy1 < iy2:
+                    intersection = (ix2 - ix1) * (iy2 - iy1)
+                    overlap_ratio = intersection / face_area
+                    if overlap_ratio > best_person_overlap:
+                        best_person_overlap = overlap_ratio
+                        best_person_area = box_area
+                        
+            # If the face is not inside any person box (Missing Body Rule)
+            if best_person_overlap < 0.3:
+                log.warning(f"[SPOOF] No YOLO person body found attached to this face (Missing Body Rule).")
+                is_real = False
+                score = 0.05
+            # If the face is inside a person box, check the ratio (Disembodied Face Rule)
+            elif best_person_area > 0:
+                face_to_body_ratio = face_area / best_person_area
+                if face_to_body_ratio > 0.85:
+                    log.warning(f"[SPOOF] Face takes up {face_to_body_ratio*100:.1f}% of detected body. Rejecting as printed photo.")
+                    is_real = False
+                    score = 0.05
                 
         return is_real, score
