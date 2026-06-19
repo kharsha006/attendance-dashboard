@@ -637,6 +637,7 @@ DASHBOARD_HTML = r"""
 <!-- Tabs -->
 <div class="tabs">
   <div class="tab active" id="nav-tab-attendance" onclick="showTab('tab-attendance')">Daily Dashboard</div>
+  <div class="tab" id="nav-tab-captured" onclick="showTab('tab-captured')">Captured Frames</div>
   <div class="tab" id="nav-tab-monthly" onclick="showTab('tab-monthly')">Monthly Reports</div>
   <div class="tab" id="nav-tab-enroll" onclick="showTab('tab-enroll')">Enroll Employee</div>
 </div>
@@ -791,6 +792,19 @@ DASHBOARD_HTML = r"""
           <tr><td colspan="5" class="empty">Select a month above and click Generate Report.</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════ CAPTURED FRAMES ══════════════════ -->
+  <div id="tab-captured" class="page">
+    <div class="table-wrap">
+      <div class="section-head" style="padding:16px 18px 0;">
+        <div class="section-title">Captured Frames (Live Feed)</div>
+        <button onclick="loadCapturedFrames()">Refresh Now</button>
+      </div>
+      <div id="captured-frames-container" style="padding:12px 14px 14px; display:flex; flex-wrap:wrap; gap:16px;">
+        <div class="empty" style="width:100%;">Loading frames...</div>
+      </div>
     </div>
   </div>
 
@@ -1010,6 +1024,7 @@ DASHBOARD_HTML = r"""
     if (id === 'tab-activity')   loadActivity();
     if (id === 'tab-security')   loadUnknowns();
     if (id === 'tab-enroll')     loadEmployees();
+    if (id === 'tab-captured')   loadCapturedFrames();
   }
 
   // ── Camera status badges ──
@@ -1260,6 +1275,38 @@ DASHBOARD_HTML = r"""
     window.location.href = `/api/export_monthly?month=${m}`;
   }
 
+  // ── Captured Frames ──
+  function loadCapturedFrames() {
+    const c = document.getElementById('captured-frames-container');
+    fetch('/api/captured_frames')
+      .then(r => r.json())
+      .then(data => {
+        if (!data || data.length === 0) {
+          c.innerHTML = '<div class="empty" style="width:100%;">No frames captured recently.</div>';
+          return;
+        }
+        let html = '';
+        data.forEach(img => {
+          const isSpoof = img.employee_name.startsWith('SPOOF');
+          const badgeColor = isSpoof ? 'var(--danger)' : 'var(--success)';
+          html += `
+            <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;width:180px;background:var(--bg-surface);">
+              <div style="padding:6px 10px;font-size:11px;font-family:var(--mono);color:var(--text-soft);border-bottom:1px solid var(--border);background:var(--bg-inset);">
+                ${img.event_time_local.split(' ')[1]} — <strong style="color:${isSpoof ? 'var(--danger)' : 'var(--text)'}">${img.employee_name}</strong>
+              </div>
+              <img src="data:image/jpeg;base64,${img.frame_b64}" style="width:100%;height:140px;object-fit:cover;display:block;">
+              <div style="padding:6px 10px;font-size:11px;color:var(--text-muted);">
+                Cam: ${img.camera_source.replace(/_/g, ' ')}
+              </div>
+            </div>
+          `;
+        });
+        c.innerHTML = html;
+      }).catch(err => {
+        c.innerHTML = '<div class="empty" style="color:red;width:100%;">Error loading frames.</div>';
+      });
+  }
+
   // ── Security / Unknowns ──
   function loadUnknowns() {
     const container = document.getElementById('unknowns-container');
@@ -1456,8 +1503,11 @@ DASHBOARD_HTML = r"""
 
   // Auto-refresh live tab every 5 seconds, camera status every 10s
   setInterval(() => {
-    if (document.getElementById('tab-live').classList.contains('active')) {
+    if (document.getElementById('tab-live') && document.getElementById('tab-live').classList.contains('active')) {
       loadLive();
+    }
+    if (document.getElementById('tab-captured') && document.getElementById('tab-captured').classList.contains('active')) {
+      loadCapturedFrames();
     }
   }, 5000);
   setInterval(loadCameraStatus, 10000);

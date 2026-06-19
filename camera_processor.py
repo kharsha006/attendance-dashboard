@@ -200,6 +200,25 @@ def process_camera(camera_url, camera_name, employee_db,
                                 "name": "SPOOF / FAKE",
                                 "conf": liveness_score
                             })
+                            try:
+                                h, w = work_frame.shape[:2]
+                                sx1, sy1 = max(0, int(fx1)), max(0, int(fy1))
+                                sx2, sy2 = min(w, int(fx2)), min(h, int(fy2))
+                                face_crop = work_frame[sy1:sy2, sx1:sx2]
+                                if face_crop.size > 0:
+                                    ret, buffer = cv2.imencode('.jpg', face_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                                    if ret:
+                                        from attendance_db import get_db
+                                        get_db().captured_frames.insert_one({
+                                            "employee_id": "spoof",
+                                            "employee_name": f"SPOOF ({liveness_score:.2f})",
+                                            "timestamp": datetime.utcnow(),
+                                            "event_time_local": now_ist().strftime("%Y-%m-%d %H:%M:%S"),
+                                            "camera_source": camera_name,
+                                            "frame_b64": base64.b64encode(buffer).decode('utf-8')
+                                        })
+                            except Exception as e:
+                                log.error("[%s] Failed to log spoof frame: %s", camera_name.upper(), e)
                             continue
 
                     emp_id, emp_name, confidence = face_engine.match(
