@@ -95,8 +95,8 @@ FACE_DEDUP_IOU            = 0.45        # merge duplicate face boxes from full-f
 # ---------------------------------------------------------------
 # ANTI-SPOOFING / LIVENESS DETECTION
 # ---------------------------------------------------------------
-ENABLE_ANTI_SPOOFING  = False
-LIVENESS_THRESHOLD    = 0.85            # Minimum score to be considered a real person (0.0 to 1.0)
+ENABLE_ANTI_SPOOFING  = True
+LIVENESS_THRESHOLD    = 0.60            # Minimum score to be considered a real person (0.0 to 1.0)
 
 # ---------------------------------------------------------------
 # DEDUPLICATION COOLDOWNS
