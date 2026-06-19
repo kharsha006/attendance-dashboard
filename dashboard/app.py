@@ -636,10 +636,7 @@ DASHBOARD_HTML = r"""
 
 <!-- Tabs -->
 <div class="tabs">
-  {% if not hide_cameras %}
-  <div class="tab active" id="nav-tab-cameras" onclick="showTab('tab-cameras')">Live Cameras</div>
-  {% endif %}
-  <div class="tab {% if hide_cameras %}active{% endif %}" id="nav-tab-attendance" onclick="showTab('tab-attendance')">Daily Dashboard</div>
+  <div class="tab active" id="nav-tab-attendance" onclick="showTab('tab-attendance')">Daily Dashboard</div>
   <div class="tab" id="nav-tab-monthly" onclick="showTab('tab-monthly')">Monthly Reports</div>
   <div class="tab" id="nav-tab-frames" onclick="showTab('tab-frames')">Captured Frames</div>
   <div class="tab" id="nav-tab-enroll" onclick="showTab('tab-enroll')">Enroll Employee</div>
@@ -647,21 +644,8 @@ DASHBOARD_HTML = r"""
 
 <div class="main">
 
-  <!-- ══════════════════ LIVE CAMERA WATCH ══════════════════ -->
-  {% if not hide_cameras %}
-  <div id="tab-cameras" class="page active">
-    <div class="cameras-intro">
-      <p>Live feeds stream directly from the cameras. Feeds start on demand when you open this tab.</p>
-    </div>
-
-    <div class="camera-grid" id="camera-grid">
-      <!-- populated by JS -->
-    </div>
-  </div>
-  {% endif %}
-
   <!-- ══════════════════ DAILY DASHBOARD ══════════════════ -->
-  <div id="tab-attendance" class="page {% if hide_cameras %}active{% endif %}">
+  <div id="tab-attendance" class="page active">
     <div class="stat-row">
       <div class="stat-card">
         <div class="stat-label">Present Today</div>
@@ -833,6 +817,20 @@ DASHBOARD_HTML = r"""
       </p>
       <div style="display:flex; flex-direction:column; gap:12px;">
         <input type="text" id="enroll-name" placeholder="Employee Full Name" style="padding:10px; border:1px solid var(--border); border-radius:4px; font-family:var(--sans); font-size:14px;">
+        
+        <!-- Webcam Section -->
+        <div style="border: 1px solid var(--border); border-radius: 4px; padding: 12px; background: var(--bg-inset);">
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <button class="btn-ghost" onclick="startWebcam()" id="btn-start-cam" style="flex:1; padding:10px; border-radius:4px; border: 1px solid var(--border); background: #fff; cursor: pointer;">Start Webcam</button>
+            <button class="btn-primary" onclick="capturePhoto()" id="btn-capture" style="flex:1; display:none; padding:10px; border-radius:4px; border:none; cursor: pointer;">Capture Photo</button>
+          </div>
+          <video id="webcam-video" autoplay playsinline style="width: 100%; border-radius: 4px; display: none; background: #000;"></video>
+          <canvas id="webcam-canvas" style="display:none;"></canvas>
+          <div id="captured-preview" style="display: flex; gap: 8px; margin-top: 12px; overflow-x: auto;"></div>
+        </div>
+
+        <p style="color:var(--text-muted); font-size:12px; text-align:center; margin:0;">— OR UPLOAD FILES —</p>
+        
         <input type="file" id="enroll-files" multiple accept="image/*" style="padding:10px; border:1px solid var(--border); border-radius:4px; font-family:var(--sans);">
         <button class="btn-primary" onclick="submitEnrollment()" style="padding:12px 16px; border-radius:4px; font-size:14px; font-weight:600;">Submit Enrollment</button>
       </div>
@@ -920,6 +918,7 @@ DASHBOARD_HTML = r"""
 
   function buildCameraGrid() {
     const grid = document.getElementById('camera-grid');
+    if (!grid) return;
     grid.innerHTML = CAMERA_NAMES.map(c => {
       const roleClass = `role-${c.role}`;
       const roleLabel = c.role.charAt(0).toUpperCase() + c.role.slice(1);
@@ -1316,14 +1315,61 @@ DASHBOARD_HTML = r"""
   }
 
   // ── Enroll Employee ──
+  let webcamStream = null;
+  let capturedImages = [];
+
+  function startWebcam() {
+    const video = document.getElementById('webcam-video');
+    const btnStart = document.getElementById('btn-start-cam');
+    const btnCapture = document.getElementById('btn-capture');
+    
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        webcamStream = stream;
+        video.srcObject = stream;
+        video.style.display = 'block';
+        btnStart.style.display = 'none';
+        btnCapture.style.display = 'block';
+      })
+      .catch(err => {
+        alert("Camera access denied or unavailable. Please ensure you are using HTTPS and allow camera access.");
+      });
+  }
+
+  function capturePhoto() {
+    if (capturedImages.length >= 3) {
+      alert("Maximum 3 photos allowed.");
+      return;
+    }
+    const video = document.getElementById('webcam-video');
+    const canvas = document.getElementById('webcam-canvas');
+    const preview = document.getElementById('captured-preview');
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL('image/jpeg');
+    
+    capturedImages.push(dataUrl);
+    
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.height = '60px';
+    img.style.borderRadius = '4px';
+    img.style.border = '1px solid var(--border)';
+    preview.appendChild(img);
+  }
+
   function submitEnrollment() {
     const name = document.getElementById('enroll-name').value.trim();
     const files = document.getElementById('enroll-files').files;
     const status = document.getElementById('enroll-status');
     
     if (!name) { status.textContent = "Please enter a name."; status.style.color = "red"; return; }
-    if (files.length === 0) { status.textContent = "Please upload at least 1 photo."; status.style.color = "red"; return; }
-    if (files.length > 3) { status.textContent = "Maximum 3 photos allowed."; status.style.color = "red"; return; }
+    
+    const totalPhotos = files.length + capturedImages.length;
+    if (totalPhotos === 0) { status.textContent = "Please capture or upload at least 1 photo."; status.style.color = "red"; return; }
+    if (totalPhotos > 3) { status.textContent = "Maximum 3 photos allowed in total."; status.style.color = "red"; return; }
     
     status.textContent = "Processing images...";
     status.style.color = "var(--text-muted)";
@@ -1337,12 +1383,14 @@ DASHBOARD_HTML = r"""
       });
     });
     
-    Promise.all(promises).then(base64Images => {
+    Promise.all(promises).then(base64Files => {
+      const allImages = base64Files.concat(capturedImages);
+      
       status.textContent = "Sending to cloud queue...";
       fetch('/api/enroll_employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employee_name: name, images: base64Images })
+        body: JSON.stringify({ employee_name: name, images: allImages })
       })
       .then(r => r.json())
       .then(res => {
@@ -1351,6 +1399,15 @@ DASHBOARD_HTML = r"""
           status.style.color = "var(--success)";
           document.getElementById('enroll-name').value = '';
           document.getElementById('enroll-files').value = '';
+          capturedImages = [];
+          document.getElementById('captured-preview').innerHTML = '';
+          if (webcamStream) {
+            webcamStream.getTracks().forEach(t => t.stop());
+            document.getElementById('webcam-video').style.display = 'none';
+            document.getElementById('btn-start-cam').style.display = 'block';
+            document.getElementById('btn-capture').style.display = 'none';
+            webcamStream = null;
+          }
         } else {
           status.textContent = "Error: " + res.error;
           status.style.color = "red";
@@ -1396,7 +1453,7 @@ DASHBOARD_HTML = r"""
 
 @app.route("/")
 def index():
-    return render_template_string(DASHBOARD_HTML, hide_cameras=bool(os.environ.get("DATABASE_URL")))
+    return render_template_string(DASHBOARD_HTML)
 
 
 @app.route("/api/today")

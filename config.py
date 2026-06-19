@@ -15,7 +15,7 @@ load_dotenv()
 # ---------------------------------------------------------------
 GLOBAL_FRAME_BUFFER = {}
 
-ATTENDANCE_CAMERA_URLS = [1]
+ATTENDANCE_CAMERA_URLS = [0]
 
 # ---------------------------------------------------------------
 OFFICE_CAMERA_A_URL = 0
